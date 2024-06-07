@@ -38,70 +38,32 @@ int main()
         return 1;
     }
 
-    hSocket = socket(PF_INET, SOCK_STREAM, 0);
-    if (hSocket == INVALID_SOCKET)
+    // GetHostByName
+    struct hostent* host;
+    host = gethostbyname("www.google.co.kr");
+
+    if (!host)
     {
-        cout << "Error: socket()";
+        cout << "Error: gethostbyname()";
         return 1;
     }
 
-    servAddr = {};
-    servAddr.sin_family = AF_INET;
-    servAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    servAddr.sin_port = htons(8888);
+    cout << "Official name: " << host->h_name << endl;
 
-    if (connect(hSocket, (SOCKADDR*)&servAddr, sizeof(servAddr)) == SOCKET_ERROR)
+    for (int i = 0; host->h_aliases[i]; i++)
     {
-        cout << "Error: connect()";
-        return 1;
+        cout << "Aliases #" << i + 1 << " " << host->h_aliases[i] << endl;
     }
 
-    vector<char> inputMessage;
-    inputMessage.resize(30);
+    string addrType = (host->h_addrtype == AF_INET) ? "AF_INET" : "AF_INET6";
+    cout << addrType << endl;
 
-    // 서버와 메시지 주고받기 (3회)
+    for (int i = 0; host->h_addr_list[i]; i++)
     {
-        while (true)
-        {
-            // 메시지 발신
-            char pktMsg[100] = {};
-
-            string inputMessage;
-            int inputMessageSize = 0;
-
-            cout << "메시지를 입력하세요: ";
-            getline(cin, inputMessage);
-
-            inputMessageSize = inputMessage.size();
-
-            pktMsg[0] = (char)inputMessageSize;
-
-            strcpy_s(&pktMsg[sizeof(int)], sizeof(char) * 100 - sizeof(int), inputMessage.c_str());
-
-            send(hSocket, pktMsg, inputMessageSize + sizeof(int), 0);
-
-
-            // 메시지 수신
-            char recvMsg[30] = {};
-            int recvLen = 0;
-            int result = 0;
-            int msgSize = 0;
-
-            recv(hSocket, recvMsg, sizeof(int), 0);
-            msgSize = (int)recvMsg[0];
-
-            while (recvLen < msgSize * sizeof(char))
-            {
-                int tmpRecvLen = recv(hSocket, &recvMsg[recvLen], sizeof(recvMsg), 0);
-                recvLen += tmpRecvLen;
-            }
-
-            string newString(recvMsg);
-            cout << newString << "\n";
-        }
+        cout << "IP #" << i + 1 << " " << inet_ntoa(*(struct in_addr*)host->h_addr_list[i]) << endl;
     }
-    
-    closesocket(hSocket);
+
+
     WSACleanup();
 
     return 0;
