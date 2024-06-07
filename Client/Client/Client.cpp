@@ -4,13 +4,28 @@
 #include <WinSock2.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <string>
 #include <vector>
 
 using namespace std;
 
+void Test()
+{
+    string inputMessage;
+    int inputMessageSize = 0;
+
+    cout << "메시지를 입력하세요: ";
+    cin >> inputMessage;
+
+    inputMessageSize = inputMessage.size();
+
+    cout << inputMessageSize;
+}
+
 int main()
 {
+    //Test();
+
     WSADATA wsaData;
     SOCKET hSocket;
     SOCKADDR_IN servAddr;
@@ -44,42 +59,51 @@ int main()
     vector<char> inputMessage;
     inputMessage.resize(30);
 
-    // 서버에 메시지 보내기
+    // 서버와 메시지 주고받기 (3회)
     {
-        char opMsg[30] = {};
-        int count = 0;
-        int num = 0;
-
-        cout << "Operand count:";
-        cin >> count;
-        opMsg[0] = (char)count;
-
-        for (int i = 0; i < count; i++)
+        while (true)
         {
+            // 메시지 발신
+            char pktMsg[100] = {};
 
-            cout << "Operand " << i << ": ";
-            cin >> num;
-            opMsg[sizeof(int) * i + 1] = num;
+            string inputMessage;
+            int inputMessageSize = 0;
+
+            cout << "메시지를 입력하세요: ";
+            getline(cin, inputMessage);
+
+            inputMessageSize = inputMessage.size();
+
+            pktMsg[0] = (char)inputMessageSize;
+
+            strcpy_s(&pktMsg[sizeof(int)], sizeof(char) * 100 - sizeof(int), inputMessage.c_str());
+
+            send(hSocket, pktMsg, inputMessageSize + sizeof(int), 0);
+
+
+            // 메시지 수신
+            char recvMsg[30] = {};
+            int recvLen = 0;
+            int result = 0;
+            int msgSize = 0;
+
+            recv(hSocket, recvMsg, sizeof(int), 0);
+            msgSize = (int)recvMsg[0];
+
+            while (recvLen < msgSize * sizeof(char))
+            {
+                int tmpRecvLen = recv(hSocket, &recvMsg[recvLen], sizeof(recvMsg), 0);
+                recvLen += tmpRecvLen;
+            }
+
+            string newString(recvMsg);
+            cout << newString << "\n";
         }
-
-        char op;
-        cout << "Operator: ";
-        cin >> op;
-        opMsg[sizeof(int) * count + 1] = op;
-
-        send(hSocket, opMsg, sizeof(int) * count + 2, 0);
-    }
-
-    // 서버에서 메시지 받기
-    {
-        int result;
-        recv(hSocket, (char*) & result, sizeof(int), 0);
-
-        cout << result;
     }
     
     closesocket(hSocket);
     WSACleanup();
 
     return 0;
+    
 }

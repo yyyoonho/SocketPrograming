@@ -2,43 +2,10 @@
 
 #include <iostream>
 #include <winsock2.h>
-
 #include <vector>
+#include <string>
 
 using namespace std;
-
-int CalFunc(int cnt, int* num, char op)
-{
-    int firstNum = num[0];
-
-    cout << "firstNum: " << num[0] << endl;
-
-    if (op == '+')
-    {
-        for (int i = 1; i < cnt; i++)
-        {
-            cout << "num " << i << ": " << num[i] << endl;
-
-            firstNum += num[i];
-        }
-    }
-    else if (op == '-')
-    {
-        for (int i = 1; i < cnt; i++)
-        {
-            firstNum -= num[i];
-        }
-    }
-    else if (op == '*')
-    {
-        for (int i = 1; i < cnt; i++)
-        {
-            firstNum *= num[i];
-        }
-    }
-
-    return firstNum;
-}
 
 int main()
 {
@@ -93,25 +60,43 @@ int main()
 
     // 클라이언트에서 온 메시지 처리
     {
-        char recvMsg[30] = {};
-        int recvLen = 0;
-        int result = 0;
-        int operandCnt = 0;
-
-        recv(hClntSock, recvMsg, 1, 0);
-        operandCnt = recvMsg[0];
-
-        while (recvLen < operandCnt * sizeof(int) + 1)
+        while (true)
         {
-            int tmpRecvLen = recv(hClntSock, &recvMsg[recvLen], sizeof(recvMsg), 0);
-            recvLen += tmpRecvLen;
+            // 메시지 수신
+            char recvMsg[30] = {};
+            int recvLen = 0;
+            int result = 0;
+            int msgSize = 0;
+
+            recv(hClntSock, recvMsg, sizeof(int), 0);
+            msgSize = (int)recvMsg[0];
+
+            while (recvLen < msgSize * sizeof(char))
+            {
+                int tmpRecvLen = recv(hClntSock, &recvMsg[recvLen], sizeof(recvMsg), 0);
+                recvLen += tmpRecvLen;
+            }
+
+            string newString(recvMsg);
+            cout << newString << "\n";
+
+            // 메시지 발신
+            char pktMsg[100] = {};
+
+            string inputMessage;
+            int inputMessageSize = 0;
+
+            cout << "메시지를 입력하세요: ";
+            getline(cin, inputMessage);
+
+            inputMessageSize = inputMessage.size();
+
+            pktMsg[0] = (char)inputMessageSize;
+
+            strcpy_s(&pktMsg[sizeof(int)], sizeof(char) * 100 - sizeof(int), inputMessage.c_str());
+
+            send(hClntSock, pktMsg, inputMessageSize + sizeof(int), 0);
         }
-
-        result = CalFunc(operandCnt, (int*)recvMsg, recvMsg[recvLen - 1]);
-        
-        cout << "result: " << result;
-
-        send(hClntSock, (char*)&result, sizeof(result), 0);
     }
 
     closesocket(hClntSock);
