@@ -58,17 +58,28 @@ int main()
         return 1;
     }
 
+    // SO_REUSEADDR -> Time-wait 수정
+    int option = 0;
+    option = TRUE;
+    int state = setsockopt(hServSock, SOL_SOCKET, SO_REUSEADDR, (char*)&option, sizeof(option));
+
+    if (state == SOCKET_ERROR)
+    {
+        cout << "Error: setsockopt()" << endl;
+        return 1;
+    }
+    
+
     // 클라이언트에서 온 메시지 처리
     {
-        while (true)
+        char recvMsg[30] = {};
+        int strLen = 0;
+
+        while ((strLen = recv(hClntSock, recvMsg, sizeof(int), 0)) != 0)
         {
-            // 메시지 수신
-            char recvMsg[30] = {};
             int recvLen = 0;
-            int result = 0;
             int msgSize = 0;
 
-            recv(hClntSock, recvMsg, sizeof(int), 0);
             msgSize = (int)recvMsg[0];
 
             while (recvLen < msgSize * sizeof(char))
@@ -79,24 +90,9 @@ int main()
 
             string newString(recvMsg);
             cout << newString << "\n";
-
-            // 메시지 발신
-            char pktMsg[100] = {};
-
-            string inputMessage;
-            int inputMessageSize = 0;
-
-            cout << "메시지를 입력하세요: ";
-            getline(cin, inputMessage);
-
-            inputMessageSize = inputMessage.size();
-
-            pktMsg[0] = (char)inputMessageSize;
-
-            strcpy_s(&pktMsg[sizeof(int)], sizeof(char) * 100 - sizeof(int), inputMessage.c_str());
-
-            send(hClntSock, pktMsg, inputMessageSize + sizeof(int), 0);
         }
+
+        cout << strLen << endl;
     }
 
     closesocket(hClntSock);

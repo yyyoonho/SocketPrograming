@@ -38,32 +38,49 @@ int main()
         return 1;
     }
 
-    // GetHostByName
-    struct hostent* host;
-    host = gethostbyname("www.google.co.kr");
-
-    if (!host)
+    hSocket = socket(PF_INET, SOCK_STREAM, 0);
+    if (hSocket == -1)
     {
-        cout << "Error: gethostbyname()";
+        cout << "Error: socket()";
+    }
+
+    memset(&servAddr, 0, sizeof(servAddr));
+    servAddr.sin_family = AF_INET;
+    servAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    servAddr.sin_port = htons(8888);
+
+    if (connect(hSocket, (SOCKADDR*)&servAddr, sizeof(servAddr)) == SOCKET_ERROR)
+    {
+        cout << "Error: connect()";
         return 1;
     }
 
-    cout << "Official name: " << host->h_name << endl;
-
-    for (int i = 0; host->h_aliases[i]; i++)
+    while (true)
     {
-        cout << "Aliases #" << i + 1 << " " << host->h_aliases[i] << endl;
+        char pktMsg[100] = {};
+
+        string inputMessage;
+        int inputMessageSize = 0;
+
+        cout << "메시지를 입력하세요: ";
+        getline(cin, inputMessage);
+
+        if (inputMessage == "q" || inputMessage == "Q")
+        {
+            break;
+        }
+
+        inputMessageSize = inputMessage.size();
+
+        pktMsg[0] = (char)inputMessageSize;
+
+        strcpy_s(&pktMsg[sizeof(int)], sizeof(char) * 100 - sizeof(int), inputMessage.c_str());
+
+        send(hSocket, pktMsg, inputMessageSize + sizeof(int), 0);
+
     }
 
-    string addrType = (host->h_addrtype == AF_INET) ? "AF_INET" : "AF_INET6";
-    cout << addrType << endl;
-
-    for (int i = 0; host->h_addr_list[i]; i++)
-    {
-        cout << "IP #" << i + 1 << " " << inet_ntoa(*(struct in_addr*)host->h_addr_list[i]) << endl;
-    }
-
-
+    closesocket(hSocket);
     WSACleanup();
 
     return 0;
