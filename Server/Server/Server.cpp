@@ -59,16 +59,64 @@ int main()
     }
 
     // SO_REUSEADDR -> Time-wait 수정
-    int option = 0;
-    option = TRUE;
-    int state = setsockopt(hServSock, SOL_SOCKET, SO_REUSEADDR, (char*)&option, sizeof(option));
-
-    if (state == SOCKET_ERROR)
     {
-        cout << "Error: setsockopt()" << endl;
-        return 1;
+        int option = 0;
+        option = TRUE;
+        int state = setsockopt(hClntSock, SOL_SOCKET, SO_REUSEADDR, (char*)&option, sizeof(option));
+
+        if (state == SOCKET_ERROR)
+        {
+            cout << "Error: setsockopt()" << endl;
+            return 1;
+        }
     }
     
+    // RecvBuffer, SendBuffer Size Setting
+    {
+        // 변경 전 SendBuffer
+        int sndBuf = 0;
+        int len = sizeof(sndBuf);
+
+        int state = getsockopt(hClntSock, SOL_SOCKET, SO_SNDBUF, (char*)&sndBuf, &len);
+        if (state == SOCKET_ERROR)
+        {
+            cout << "Error: getsockopt()" << endl;
+            return 1;
+        }
+        cout << "SendBuffer size: " << sndBuf << endl;
+
+        // 변경 전 RecvBuffer
+        int rcvBuf = 0;
+        len = sizeof(rcvBuf);
+
+        state = getsockopt(hClntSock, SOL_SOCKET, SO_RCVBUF, (char*)&rcvBuf, &len);
+        if (state == SOCKET_ERROR)
+        {
+            cout << "Error: getsockopt()" << endl;
+            return 1;
+        }
+        cout << "RecvBuffer size: " << rcvBuf << endl;
+
+        // 변경 후 SendBuffer
+        sndBuf = 1024 * 3;
+        state = setsockopt(hClntSock, SOL_SOCKET, SO_SNDBUF, (char*)&sndBuf, sizeof(sndBuf));
+        if (state == SOCKET_ERROR)
+        {
+            cout << "Error: getsockopt()" << endl;
+            return 1;
+        }
+        cout << "SendBuffer size: " << sndBuf << endl;
+
+        rcvBuf = 1024 * 3;
+        state = setsockopt(hClntSock, SOL_SOCKET, SO_RCVBUF, (char*)&rcvBuf, sizeof(rcvBuf));
+        if (state == SOCKET_ERROR)
+        {
+            cout << "Error: getsockopt()" << endl;
+            return 1;
+        }
+        cout << "RecvBuffer size: " << sndBuf << endl;
+    }
+
 
     // 클라이언트에서 온 메시지 처리
     {
