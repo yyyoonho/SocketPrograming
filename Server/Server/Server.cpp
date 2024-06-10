@@ -49,20 +49,17 @@ int main()
         return 1;
     }
 
-    // 연결
-    int ClntAddrSize = sizeof(clntAddr);
-    hClntSock = accept(hServSock, (SOCKADDR*)&clntAddr, &ClntAddrSize);
 
-    TIMEVAL timeout;
+    // IO멀티플렉싱 + MSG_OOB
     fd_set reads, cpyReads;
     fd_set excepts, cpyExcepts;
-    int fdNum = 0;
+    TIMEVAL timeout;
 
     FD_ZERO(&reads);
-    FD_SET(hClntSock, &reads);  // Urgent Pointer의 앞 부분에 위치한 1바이틑 제외한 나머지는 일반 적인 입력함수의 호출을 통해서 읽힌다.
-                                // 때문에, 일반 수신 fd_set에도 넣어주어야 한다.
+    FD_SET(hServSock, &reads);
+
     FD_ZERO(&excepts);
-    FD_SET(hClntSock, &excepts);
+
 
     while (true)
     {
@@ -72,35 +69,78 @@ int main()
         timeout.tv_usec = 5000;
 
         int result = select(0, &cpyReads, 0, &cpyExcepts, &timeout);
-        
+
+        if (result == SOCKET_ERROR)
+        {
+            cout << "SOCKET ERROR!" << endl;
+            break;
+        }
+        if (result == 0)
+        {
+            cout << "Time out!" << endl;
+        }
+
         if (result > 0)
         {
-            char buf[30] = {};
-            int strLen = 0;
-
-            if (FD_ISSET(hClntSock, &cpyExcepts))
-            {
-                strLen = recv(hClntSock, buf, sizeof(buf) - 1, MSG_OOB);
-                buf[strLen] = 0; // 문자열의 끝 ( 0 == ASCII 코드에서 NULL이다. '0' 이건 아님)
-                cout << "(MSG_OOB)" << buf << endl;
-            }
-
+            // 예외(MSG_OOB)
             
-            if (FD_ISSET(hClntSock, &cpyReads))
+            for (int i = 0; i < excepts.fd_count; i++)
             {
-                strLen = recv(hClntSock, buf, sizeof(buf) - 1, 0);
-                if (strLen == 0)
+                if (FD_ISSET(excepts.fd_array[i], &cpyExcepts))
                 {
-                    closesocket(hClntSock);
-                    break;
-                }
-                else
-                {
+                    // 메시지 읽기
+                    char buf[30] = {};
+                    int strLen = 0;
+                    strLen = recv(hClntSock, buf, sizeof(buf) - 1, MSG_OOB);
+
                     buf[strLen] = 0;
-                    cout << "(NoOption)" << buf << endl;
+                    cout << "(MSG_OOB) " << buf << endl;
                 }
             }
             
+
+            // 일반
+            for (int i = 0; i < reads.fd_count; i++)
+            {
+                if (FD_ISSET(reads.fd_array[i], &cpyReads))
+                {
+                    // 소켓이 서버소켓인 경우(=connect요청)
+                    if (reads.fd_array[i] == hServSock)
+                    {
+                        int addrSize = sizeof(clntAddr);
+                        hClntSock = accept(hServSock, (SOCKADDR*)&clntAddr, &addrSize); // (다중접속을 할 경우 클라이언트소켓을 vector로 관리해보자)
+                                                                                        // (테스트 편의를 위해 하나의 클라이언트만 접속하도록 하였음)
+                        FD_SET(hClntSock, &reads);
+                        FD_SET(hClntSock, &excepts);
+
+                        cout << "Connected Client: " << hClntSock << endl;
+                    }
+                    // 메시지 읽기
+                    else
+                    {
+                        char buf[30] = {};
+                        int strLen = 0;
+                        strLen = recv(reads.fd_array[i], buf, sizeof(buf) - 1, 0);
+
+                        // 종료요청
+                        if (strLen == 0)
+                        {
+                            FD_CLR(reads.fd_array[i], &reads);
+                            FD_CLR(reads.fd_array[i], &excepts);
+                            closesocket(reads.fd_array[i]);
+
+                            cout << "Close Client: " << reads.fd_array[i] << endl;
+
+                            break;
+                        }
+                        else
+                        {
+                            buf[strLen] = 0;
+                            cout << "(NO Option)" << buf << endl;
+                        }
+                    }
+                }
+            }
         }
     }
 
