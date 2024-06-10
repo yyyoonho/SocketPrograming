@@ -49,16 +49,20 @@ int main()
         return 1;
     }
 
-    // IO 멀티 플렉싱
-    //(멀티플렉싱 구조 서버: 다수의 클라이언트의 입출력 정보를 한꺼번에 묶어서 검사하고 이에 따른 처리를 진행하는 모델)
+    // 연결
+    int ClntAddrSize = sizeof(clntAddr);
+    hClntSock = accept(hServSock, (SOCKADDR*)&clntAddr, &ClntAddrSize);
+
     TIMEVAL timeout;
     fd_set reads, cpyReads;
     fd_set excepts, cpyExcepts;
     int fdNum = 0;
 
     FD_ZERO(&reads);
-    FD_SET(hServSock, &reads);
+    FD_SET(hClntSock, &reads);  // Urgent Pointer의 앞 부분에 위치한 1바이틑 제외한 나머지는 일반 적인 입력함수의 호출을 통해서 읽힌다.
+                                // 때문에, 일반 수신 fd_set에도 넣어주어야 한다.
     FD_ZERO(&excepts);
+    FD_SET(hClntSock, &excepts);
 
     while (true)
     {
@@ -67,103 +71,36 @@ int main()
         timeout.tv_sec = 5;
         timeout.tv_usec = 5000;
 
-        if ((fdNum = select(0, &cpyReads, 0, &cpyExcepts, &timeout)) == SOCKET_ERROR)
+        int result = select(0, &cpyReads, 0, &cpyExcepts, &timeout);
+        
+        if (result > 0)
         {
-            break;
-        }
+            char buf[30] = {};
+            int strLen = 0;
 
-        if (fdNum == 0)
-        {
-            cout << "Timeout!" << endl;
-        }
-
-        for (int i = 0; i < reads.fd_count; i++)
-        {
-            if (FD_ISSET(reads.fd_array[i], &cpyReads))
+            if (FD_ISSET(hClntSock, &cpyExcepts))
             {
-                if (reads.fd_array[i] == hServSock) // connection request!
-                {
-                    szClntAddr = sizeof(clntAddr);
-                    hClntSock = accept(hServSock, (SOCKADDR*)&clntAddr, &szClntAddr);
-                    if (hClntSock == INVALID_SOCKET)
-                    {
-                        cout << "Error: accept()";
-                        return 1;
-                    }
-
-                    FD_SET(hClntSock, &reads);
-                    FD_SET(hClntSock, &excepts);
-
-                    cout << "Connected client: " << hClntSock << endl;
-                }
-
-                else // read message
-                {
-                    char recvMsg[30] = {};
-                    int strLen = 0;
-
-                    strLen = recv(reads.fd_array[i], recvMsg, sizeof(int), 0);
-
-                    if (strLen == 0) // close request
-                    {
-                        FD_CLR(reads.fd_array[i], &reads);
-                        closesocket(reads.fd_array[i]);
-                        cout << "Closed Client: " << reads.fd_array[i] << endl;
-                    }
-                    else // echo!
-                    {
-                        int recvLen = 0;
-                        int msgSize = 0;
-
-                        msgSize = (int)recvMsg[0];
-
-                        while (recvLen < msgSize * sizeof(char))
-                        {
-                            int tmpRecvLen = recv(hClntSock, &recvMsg[recvLen], sizeof(recvMsg), 0);
-                            recvLen += tmpRecvLen;
-                        }
-
-                        string newString(recvMsg);
-                        cout << newString << "\n";
-
-                        send(reads.fd_array[i], recvMsg, msgSize, 0);
-                    }
-                }
+                strLen = recv(hClntSock, buf, sizeof(buf) - 1, MSG_OOB);
+                buf[strLen] = 0;
+                cout << "(MSG_OOB)" << buf << endl;
             }
 
-            if (FD_ISSET(excepts.fd_array[i], &cpyExcepts))
+            
+            if (FD_ISSET(hClntSock, &cpyReads))
             {
-                // read message
-                char recvMsg[30] = {};
-                int strLen = 0;
-
-                strLen = recv(excepts.fd_array[i], recvMsg, sizeof(int), MSG_OOB);
-
-                if (strLen == 0) // close request
+                strLen = recv(hClntSock, buf, sizeof(buf) - 1, 0);
+                if (strLen == 0)
                 {
-                    FD_CLR(excepts.fd_array[i], &excepts);
-                    closesocket(excepts.fd_array[i]);
-                    cout << "(MSG_OOB) Closed Client: " << excepts.fd_array[i] << endl;
+                    closesocket(hClntSock);
+                    break;
                 }
-                else // echo!
+                else
                 {
-                    int recvLen = 0;
-                    int msgSize = 0;
-
-                    msgSize = (int)recvMsg[0];
-
-                    while (recvLen < msgSize * sizeof(char))
-                    {
-                        int tmpRecvLen = recv(excepts.fd_array[i], &recvMsg[recvLen], sizeof(recvMsg), MSG_OOB);
-                        recvLen += tmpRecvLen;
-                    }
-
-                    string newString(recvMsg);
-                    cout << "(MSG_OOB)" << newString << "\n";
-
-                    send(excepts.fd_array[i], recvMsg, msgSize, 0);
+                    buf[strLen] = 0;
+                    cout << "(NoOption)" << buf << endl;
                 }
             }
+            
         }
     }
 
