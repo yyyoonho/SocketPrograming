@@ -53,18 +53,21 @@ int main()
     //(멀티플렉싱 구조 서버: 다수의 클라이언트의 입출력 정보를 한꺼번에 묶어서 검사하고 이에 따른 처리를 진행하는 모델)
     TIMEVAL timeout;
     fd_set reads, cpyReads;
+    fd_set excepts, cpyExcepts;
     int fdNum = 0;
 
     FD_ZERO(&reads);
     FD_SET(hServSock, &reads);
+    FD_ZERO(&excepts);
 
     while (true)
     {
         cpyReads = reads;
+        cpyExcepts = excepts;
         timeout.tv_sec = 5;
         timeout.tv_usec = 5000;
 
-        if ((fdNum = select(0, &cpyReads, 0, 0, &timeout)) == SOCKET_ERROR)
+        if ((fdNum = select(0, &cpyReads, 0, &cpyExcepts, &timeout)) == SOCKET_ERROR)
         {
             break;
         }
@@ -80,7 +83,6 @@ int main()
             {
                 if (reads.fd_array[i] == hServSock) // connection request!
                 {
-                    // 연결
                     szClntAddr = sizeof(clntAddr);
                     hClntSock = accept(hServSock, (SOCKADDR*)&clntAddr, &szClntAddr);
                     if (hClntSock == INVALID_SOCKET)
@@ -90,6 +92,7 @@ int main()
                     }
 
                     FD_SET(hClntSock, &reads);
+                    FD_SET(hClntSock, &excepts);
 
                     cout << "Connected client: " << hClntSock << endl;
                 }
@@ -125,6 +128,40 @@ int main()
 
                         send(reads.fd_array[i], recvMsg, msgSize, 0);
                     }
+                }
+            }
+
+            if (FD_ISSET(excepts.fd_array[i], &cpyExcepts))
+            {
+                // read message
+                char recvMsg[30] = {};
+                int strLen = 0;
+
+                strLen = recv(excepts.fd_array[i], recvMsg, sizeof(int), MSG_OOB);
+
+                if (strLen == 0) // close request
+                {
+                    FD_CLR(excepts.fd_array[i], &excepts);
+                    closesocket(excepts.fd_array[i]);
+                    cout << "(MSG_OOB) Closed Client: " << excepts.fd_array[i] << endl;
+                }
+                else // echo!
+                {
+                    int recvLen = 0;
+                    int msgSize = 0;
+
+                    msgSize = (int)recvMsg[0];
+
+                    while (recvLen < msgSize * sizeof(char))
+                    {
+                        int tmpRecvLen = recv(excepts.fd_array[i], &recvMsg[recvLen], sizeof(recvMsg), MSG_OOB);
+                        recvLen += tmpRecvLen;
+                    }
+
+                    string newString(recvMsg);
+                    cout << "(MSG_OOB)" << newString << "\n";
+
+                    send(excepts.fd_array[i], recvMsg, msgSize, 0);
                 }
             }
         }

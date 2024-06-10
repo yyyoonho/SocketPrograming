@@ -76,7 +76,7 @@ int main()
 
         strcpy_s(&pktMsg[sizeof(int)], sizeof(char) * 100 - sizeof(int), inputMessage.c_str());
 
-        send(hSocket, pktMsg, inputMessageSize + sizeof(int), 0);
+        send(hSocket, pktMsg, inputMessageSize + sizeof(int), 0); // 긴급으로 처리해주세요!
 
     }
 
