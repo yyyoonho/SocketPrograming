@@ -81,7 +81,7 @@ int main()
             if (FD_ISSET(hClntSock, &cpyExcepts))
             {
                 strLen = recv(hClntSock, buf, sizeof(buf) - 1, MSG_OOB);
-                buf[strLen] = 0;
+                buf[strLen] = 0; // 문자열의 끝 ( 0 == ASCII 코드에서 NULL이다. '0' 이건 아님)
                 cout << "(MSG_OOB)" << buf << endl;
             }
 
