@@ -49,101 +49,87 @@ int main()
         return 1;
     }
 
-    // 연결
-    szClntAddr = sizeof(clntAddr);
-    hClntSock = accept(hServSock, (SOCKADDR*)&clntAddr, &szClntAddr);
-    if (hClntSock == INVALID_SOCKET)
+    // IO 멀티 플렉싱
+    //(멀티플렉싱 구조 서버: 다수의 클라이언트의 입출력 정보를 한꺼번에 묶어서 검사하고 이에 따른 처리를 진행하는 모델)
+    TIMEVAL timeout;
+    fd_set reads, cpyReads;
+    int fdNum = 0;
+
+    FD_ZERO(&reads);
+    FD_SET(hServSock, &reads);
+
+    while (true)
     {
-        cout << "Error: accept()";
-        return 1;
-    }
+        cpyReads = reads;
+        timeout.tv_sec = 5;
+        timeout.tv_usec = 5000;
 
-    // SO_REUSEADDR -> Time-wait 수정
-    {
-        int option = 0;
-        option = TRUE;
-        int state = setsockopt(hClntSock, SOL_SOCKET, SO_REUSEADDR, (char*)&option, sizeof(option));
-
-        if (state == SOCKET_ERROR)
+        if ((fdNum = select(0, &cpyReads, 0, 0, &timeout)) == SOCKET_ERROR)
         {
-            cout << "Error: setsockopt()" << endl;
-            return 1;
+            break;
         }
-    }
-    
-    // RecvBuffer, SendBuffer Size Setting
-    {
-        // 변경 전 SendBuffer
-        int sndBuf = 0;
-        int len = sizeof(sndBuf);
 
-        int state = getsockopt(hClntSock, SOL_SOCKET, SO_SNDBUF, (char*)&sndBuf, &len);
-        if (state == SOCKET_ERROR)
+        if (fdNum == 0)
         {
-            cout << "Error: getsockopt()" << endl;
-            return 1;
+            cout << "Timeout!" << endl;
         }
-        cout << "SendBuffer size: " << sndBuf << endl;
 
-        // 변경 전 RecvBuffer
-        int rcvBuf = 0;
-        len = sizeof(rcvBuf);
-
-        state = getsockopt(hClntSock, SOL_SOCKET, SO_RCVBUF, (char*)&rcvBuf, &len);
-        if (state == SOCKET_ERROR)
+        for (int i = 0; i < reads.fd_count; i++)
         {
-            cout << "Error: getsockopt()" << endl;
-            return 1;
-        }
-        cout << "RecvBuffer size: " << rcvBuf << endl;
-
-        // 변경 후 SendBuffer
-        sndBuf = 1024 * 3;
-        state = setsockopt(hClntSock, SOL_SOCKET, SO_SNDBUF, (char*)&sndBuf, sizeof(sndBuf));
-        if (state == SOCKET_ERROR)
-        {
-            cout << "Error: getsockopt()" << endl;
-            return 1;
-        }
-        cout << "SendBuffer size: " << sndBuf << endl;
-
-        rcvBuf = 1024 * 3;
-        state = setsockopt(hClntSock, SOL_SOCKET, SO_RCVBUF, (char*)&rcvBuf, sizeof(rcvBuf));
-        if (state == SOCKET_ERROR)
-        {
-            cout << "Error: getsockopt()" << endl;
-            return 1;
-        }
-        cout << "RecvBuffer size: " << sndBuf << endl;
-    }
-
-
-    // 클라이언트에서 온 메시지 처리
-    {
-        char recvMsg[30] = {};
-        int strLen = 0;
-
-        while ((strLen = recv(hClntSock, recvMsg, sizeof(int), 0)) != 0)
-        {
-            int recvLen = 0;
-            int msgSize = 0;
-
-            msgSize = (int)recvMsg[0];
-
-            while (recvLen < msgSize * sizeof(char))
+            if (FD_ISSET(reads.fd_array[i], &cpyReads))
             {
-                int tmpRecvLen = recv(hClntSock, &recvMsg[recvLen], sizeof(recvMsg), 0);
-                recvLen += tmpRecvLen;
+                if (reads.fd_array[i] == hServSock) // connection request!
+                {
+                    // 연결
+                    szClntAddr = sizeof(clntAddr);
+                    hClntSock = accept(hServSock, (SOCKADDR*)&clntAddr, &szClntAddr);
+                    if (hClntSock == INVALID_SOCKET)
+                    {
+                        cout << "Error: accept()";
+                        return 1;
+                    }
+
+                    FD_SET(hClntSock, &reads);
+
+                    cout << "Connected client: " << hClntSock << endl;
+                }
+
+                else // read message
+                {
+                    char recvMsg[30] = {};
+                    int strLen = 0;
+
+                    strLen = recv(reads.fd_array[i], recvMsg, sizeof(int), 0);
+
+                    if (strLen == 0) // close request
+                    {
+                        FD_CLR(reads.fd_array[i], &reads);
+                        closesocket(reads.fd_array[i]);
+                        cout << "Closed Client: " << reads.fd_array[i] << endl;
+                    }
+                    else // echo!
+                    {
+                        int recvLen = 0;
+                        int msgSize = 0;
+
+                        msgSize = (int)recvMsg[0];
+
+                        while (recvLen < msgSize * sizeof(char))
+                        {
+                            int tmpRecvLen = recv(hClntSock, &recvMsg[recvLen], sizeof(recvMsg), 0);
+                            recvLen += tmpRecvLen;
+                        }
+
+                        string newString(recvMsg);
+                        cout << newString << "\n";
+
+                        send(reads.fd_array[i], recvMsg, msgSize, 0);
+                    }
+                }
             }
-
-            string newString(recvMsg);
-            cout << newString << "\n";
         }
-
-        cout << strLen << endl;
     }
 
-    closesocket(hClntSock);
     closesocket(hServSock);
     WSACleanup();
 
