@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <WinSock2.h>
+#include <ws2tcpip.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
@@ -28,7 +29,7 @@ int main()
 
     WSADATA wsaData;
     SOCKET hSocket;
-    SOCKADDR_IN servAddr;
+    SOCKADDR_IN clntAddr;
 
     int strLen=0;
 
@@ -38,55 +39,43 @@ int main()
         return 1;
     }
 
-    hSocket = socket(PF_INET, SOCK_STREAM, 0);
+    hSocket = socket(PF_INET, SOCK_DGRAM, 0);
     if (hSocket == -1)
     {
         cout << "Error: socket()";
     }
 
-    memset(&servAddr, 0, sizeof(servAddr));
-    servAddr.sin_family = AF_INET;
-    servAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    servAddr.sin_port = htons(8888);
+    memset(&clntAddr, 0, sizeof(clntAddr));
+    clntAddr.sin_family = AF_INET;
+    clntAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    clntAddr.sin_port = htons(8888);
 
-    if (connect(hSocket, (SOCKADDR*)&servAddr, sizeof(servAddr)) == SOCKET_ERROR)
+    if (bind(hSocket, (sockaddr*)&clntAddr, sizeof(clntAddr))==SOCKET_ERROR)
     {
-        cout << "Error: connect()";
+        cout << "Error: Bind()" << endl;
         return 1;
     }
-    /*
+
+    // 멀티캐스트 IP가입 절차
+    struct ip_mreq joinAddr;
+    joinAddr.imr_multiaddr.s_addr = inet_addr("239.255.0.1");   // 멀티캐스트 그룹의 주소정보
+    joinAddr.imr_interface.s_addr = htonl(INADDR_ANY);          // 그룹에 가입할 호스트의 주소정보(나)
+    if (setsockopt(hSocket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&joinAddr, sizeof(joinAddr)) == SOCKET_ERROR)
+    {
+        cout<<"Error: setsockopt()"<<endl;
+        return 1;
+    }
+
     while (true)
     {
-        char pktMsg[100] = {};
-
-        string inputMessage;
-        int inputMessageSize = 0;
-
-        cout << "메시지를 입력하세요: ";
-        getline(cin, inputMessage);
-
-        if (inputMessage == "q" || inputMessage == "Q")
-        {
+        char buf[30] = {};
+        int strLen = recvfrom(hSocket, buf, sizeof(buf) - 1, 0, NULL, 0);
+        if (strLen < 0)
             break;
-        }
 
-        inputMessageSize = inputMessage.size();
-
-        pktMsg[0] = (char)inputMessageSize;
-
-        strcpy_s(&pktMsg[sizeof(int)], sizeof(char) * 100 - sizeof(int), inputMessage.c_str());
-
-        send(hSocket, pktMsg, inputMessageSize + sizeof(int), 0);
+        buf[strLen] = 0;
+        cout << buf << endl;
     }
-    */
-
-    send(hSocket, "123", 3, 0);
-    Sleep(1);
-    send(hSocket, "4", 1, MSG_OOB);
-    Sleep(1);
-    send(hSocket, "567", 3, 0);
-    Sleep(1);
-    send(hSocket, "890", 3, MSG_OOB);
 
     closesocket(hSocket);
     WSACleanup();
