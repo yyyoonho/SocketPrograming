@@ -10,6 +10,8 @@
 
 using namespace std;
 
+#define BUF_SIZE 30
+
 void Test()
 {
     string inputMessage;
@@ -50,30 +52,19 @@ int main()
     clntAddr.sin_addr.s_addr = htonl(INADDR_ANY);
     clntAddr.sin_port = htons(8888);
 
-    if (bind(hSocket, (sockaddr*)&clntAddr, sizeof(clntAddr))==SOCKET_ERROR)
+    if ((bind(hSocket, (SOCKADDR*)&clntAddr, sizeof(clntAddr)) == SOCKET_ERROR))
     {
-        cout << "Error: Bind()" << endl;
-        return 1;
-    }
-
-    // 멀티캐스트 IP가입 절차
-    struct ip_mreq joinAddr;
-    joinAddr.imr_multiaddr.s_addr = inet_addr("239.255.0.1");   // 멀티캐스트 그룹의 주소정보
-    joinAddr.imr_interface.s_addr = htonl(INADDR_ANY);          // 그룹에 가입할 호스트의 주소정보(나)
-    if (setsockopt(hSocket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&joinAddr, sizeof(joinAddr)) == SOCKET_ERROR)
-    {
-        cout<<"Error: setsockopt()"<<endl;
+        cout<<"Error: bind()"<<endl;
         return 1;
     }
 
     while (true)
     {
-        char buf[30] = {};
-        int strLen = recvfrom(hSocket, buf, sizeof(buf) - 1, 0, NULL, 0);
-        if (strLen < 0)
-            break;
+        char buf[BUF_SIZE] = {};
 
+        int strLen = recvfrom(hSocket, buf, BUF_SIZE - 1, 0, NULL, 0);
         buf[strLen] = 0;
+
         cout << buf << endl;
     }
 

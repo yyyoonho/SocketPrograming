@@ -8,14 +8,13 @@
 
 using namespace std;
 
-#define TTL 64
 #define BUF_SIZE 30
 
 int main(int argc, char* argv[])
 {
     WSADATA wsaData;
-    SOCKET hServSock;
-    SOCKADDR_IN mulAddr;
+    SOCKET sendSock;
+    SOCKADDR_IN broad_addr;
 
     // 라이브러리 초기화
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
@@ -25,46 +24,41 @@ int main(int argc, char* argv[])
     }
 
     // 소켓 생성
-    hServSock = socket(PF_INET, SOCK_DGRAM, 0); // UDP소켓
-    if (hServSock == INVALID_SOCKET)
+    sendSock = socket(PF_INET, SOCK_DGRAM, 0); // UDP소켓
+    if (sendSock == INVALID_SOCKET)
     {
         cout << "Error: socket()";
         return 1;
     }
 
-    // 주소 할당 (멀티캐스트용)
-    mulAddr = {};
-    mulAddr.sin_family = AF_INET;
-    mulAddr.sin_addr.s_addr = inet_addr("239.255.0.1");
-    mulAddr.sin_port = htons(8888);
-    
-    int timeLive = TTL; 
-    setsockopt(hServSock, IPPROTO_IP, IP_MULTICAST_TTL, (char*)&timeLive, sizeof(timeLive)); // TTL 설정
-    
+    broad_addr = {};
+    broad_addr.sin_family = AF_INET;
+    broad_addr.sin_addr.s_addr = inet_addr("255.255.255.255"); // Local 브로드캐스트
+    broad_addr.sin_port = htons(8888);
+
+    int so_brd = 1;
+    setsockopt(sendSock, SOL_SOCKET, SO_BROADCAST, (char*)&so_brd, sizeof(so_brd));
+
     while (true)
     {
         char buf[BUF_SIZE] = {};
-        int inpuMsgSize = 0;
-
         string inputMSG;
+        int msgSize = 0;
         getline(cin, inputMSG);
 
-        if (inputMSG == "q" || inputMSG == "Q")
+        if (inputMSG == "Q" || inputMSG == "q")
         {
             break;
         }
 
-        inpuMsgSize = inputMSG.size();
+        msgSize = inputMSG.size();
         strcpy_s(buf, BUF_SIZE, inputMSG.c_str());
 
-        sendto(hServSock, buf, inpuMsgSize, 0, (sockaddr*)&mulAddr, sizeof(mulAddr));
-
-        cout << inpuMsgSize << endl;
-
-        cout << "sendTo 완료" << endl;
+        sendto(sendSock, buf, msgSize, 0, (SOCKADDR*)&broad_addr, sizeof(broad_addr));
     }
 
-    closesocket(hServSock);
+
+    closesocket(sendSock);
     WSACleanup();
 
     return 0;
