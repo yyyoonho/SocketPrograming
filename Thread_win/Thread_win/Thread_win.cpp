@@ -13,14 +13,24 @@
 
 using namespace std;
 
-unsigned WINAPI ThreadFunc(void* arg)
-{
-    int cnt = *((int*)arg);
+#define NUM_THREAD 50
+long long num = 0;
 
-    for (int i = 0; i < cnt; i++)
+unsigned WINAPI ThreadFuncInc(void* arg)
+{
+    for (int i = 0; i < 50000000; i++)
     {
-        Sleep(1000);
-        cout << "Running Thread" << endl;
+        num -= 1;
+    }
+
+    return 0;
+}
+
+unsigned WINAPI ThreadFuncDes(void* arg)
+{
+    for (int i = 0; i < 50000000; i++)
+    {
+        num += 1;
     }
 
     return 0;
@@ -28,29 +38,25 @@ unsigned WINAPI ThreadFunc(void* arg)
 
 int main()
 {
-    HANDLE hThread;
-    DWORD wr;
-    unsigned threadID;
-    int param = 5;
+    HANDLE tHandles[NUM_THREAD];
 
-    hThread = (HANDLE)_beginthreadex(NULL, 0, ThreadFunc, (void*)&param, 0, &threadID);
-    if (hThread == 0)
+    for (int i = 0; i < NUM_THREAD; i++)
     {
-        cout << "Error: _beginthreadex()" << endl;
-        return 1;
+        if (i % 2)
+        {
+            tHandles[i] = (HANDLE)_beginthreadex(NULL, 0, ThreadFuncInc, NULL, 0, NULL);
+        }
+        else
+        {
+            tHandles[i] = (HANDLE)_beginthreadex(NULL, 0, ThreadFuncDes, NULL, 0, NULL);
+        }
     }
 
-    // WaitForSingleObject
-    // 하나의 커널 오브젝트에 대해서 signaled 상태인지를 확인하기 위해서 호출하는 함수
-    // OS: "프로세스나 쓰레드가 종료되면 해당 커널 오브젝트를 signaled 상태로 변경해 놓겠다!"
-    if ((wr = WaitForSingleObject(hThread, INFINITE)) == WAIT_FAILED)
-    {
-        cout << "Error: WaitForSingleObject()" << endl;
-        return 1;
-    }
+    // 세번째 인자 TRUE = 모든 검사 대상이 다 Signaled상태가 되어야 리턴한다.
+    // Signaled = 커널 오브젝트가 종료되는 경우.
+    WaitForMultipleObjects(NUM_THREAD, tHandles, TRUE, INFINITE);
 
-    string tmp = (wr == WAIT_OBJECT_0) ? "Signaled" : "Time-out";
-    cout << "Aait result: " << tmp << endl;
+    cout << "Result: " << num << endl;
 
     return 0;
 }
