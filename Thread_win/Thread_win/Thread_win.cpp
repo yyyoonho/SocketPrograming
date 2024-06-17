@@ -22,24 +22,22 @@ mutex m1;
 
 unsigned WINAPI ThreadFuncInc(void* arg)
 {
-    m1.lock();
+    lock_guard<mutex> lock(m1);
     for (int i = 0; i < 50000000; i++)
     {
         num -= 1;
     }
-    m1.unlock();
 
     return 0;
 }
 
 unsigned WINAPI ThreadFuncDes(void* arg)
 {
-    m1.lock();
+    lock_guard<mutex> lock(m1);
     for (int i = 0; i < 50000000; i++)
     {
         num += 1;
     }
-    m1.unlock();
 
     return 0;
 }
