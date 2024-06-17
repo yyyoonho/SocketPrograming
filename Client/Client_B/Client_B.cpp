@@ -48,9 +48,9 @@ unsigned WINAPI SendMsg(void* arg)
 unsigned WINAPI RecvMsg(void* arg)
 {
     SOCKET hSocket = *((SOCKET*)arg);
-    
+
     char nameMsg[NAME_SIZE + BUF_SIZE];
-    
+
     while (true)
     {
         int strLen = recv(hSocket, nameMsg, NAME_SIZE + BUF_SIZE - 1, 0);
@@ -103,7 +103,7 @@ int main()
 
     hThread1 = (HANDLE)_beginthreadex(NULL, 0, SendMsg, (void*)&hSocket, 0, NULL);
     hThread2 = (HANDLE)_beginthreadex(NULL, 0, RecvMsg, (void*)&hSocket, 0, NULL);
-    
+
     WaitForSingleObject(hThread1, INFINITE);
     WaitForSingleObject(hThread2, INFINITE);
 
@@ -111,5 +111,5 @@ int main()
     WSACleanup();
 
     return 0;
-    
+
 }
