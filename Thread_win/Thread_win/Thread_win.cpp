@@ -16,22 +16,28 @@ using namespace std;
 #define NUM_THREAD 50
 long long num = 0;
 
+CRITICAL_SECTION cs; // CRITICAL SECTION 기반의 동기화 (=유저모드 동기화)
+
 unsigned WINAPI ThreadFuncInc(void* arg)
 {
+    EnterCriticalSection(&cs); // Key 획득
     for (int i = 0; i < 50000000; i++)
     {
         num -= 1;
     }
+    LeaveCriticalSection(&cs); // Key 반납
 
     return 0;
 }
 
 unsigned WINAPI ThreadFuncDes(void* arg)
 {
+    EnterCriticalSection(&cs); // Key 획득
     for (int i = 0; i < 50000000; i++)
     {
         num += 1;
     }
+    LeaveCriticalSection(&cs); // Key 반납
 
     return 0;
 }
@@ -39,6 +45,8 @@ unsigned WINAPI ThreadFuncDes(void* arg)
 int main()
 {
     HANDLE tHandles[NUM_THREAD];
+
+    InitializeCriticalSection(&cs); // Critical Section 초기화
 
     for (int i = 0; i < NUM_THREAD; i++)
     {
@@ -52,9 +60,10 @@ int main()
         }
     }
 
-    // 세번째 인자 TRUE = 모든 검사 대상이 다 Signaled상태가 되어야 리턴한다.
-    // Signaled = 커널 오브젝트가 종료되는 경우.
+
     WaitForMultipleObjects(NUM_THREAD, tHandles, TRUE, INFINITE);
+
+    DeleteCriticalSection(&cs);
 
     cout << "Result: " << num << endl;
 
