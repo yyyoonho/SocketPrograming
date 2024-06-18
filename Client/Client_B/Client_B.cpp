@@ -7,6 +7,8 @@
 #include <process.h>
 #include <Windows.h>
 
+#include <thread>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
@@ -71,7 +73,8 @@ int main()
     WSADATA wsaData;
     SOCKET hSocket;
     SOCKADDR_IN servAddr;
-    HANDLE hThread1, hThread2;
+    //HANDLE hThread1, hThread2;
+    thread t1, t2;
 
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
     {
@@ -101,11 +104,11 @@ int main()
         return 1;
     }
 
-    hThread1 = (HANDLE)_beginthreadex(NULL, 0, SendMsg, (void*)&hSocket, 0, NULL);
-    hThread2 = (HANDLE)_beginthreadex(NULL, 0, RecvMsg, (void*)&hSocket, 0, NULL);
+    t1 = thread(SendMsg, (void*)&hSocket);
+    t2 = thread(RecvMsg, (void*)&hSocket);
 
-    WaitForSingleObject(hThread1, INFINITE);
-    WaitForSingleObject(hThread2, INFINITE);
+    t1.join();
+    t2.join();
 
     closesocket(hSocket);
     WSACleanup();

@@ -7,6 +7,9 @@
 #include <Windows.h>
 #include <process.h>
 
+#include <mutex>
+#include <thread>
+
 #include <vector>
 #include <string>
 
@@ -17,16 +20,21 @@ using namespace std;
 
 int clnt_cnt = 0;
 SOCKET clntSocks[MAX_CLNT];
-HANDLE hMutex;
+
+// C++11 부터 mutex를 사용할 수 있는 라이브러리가 생겼다.
+// C++ 표준에서 얘기하는 std::mutex는 그 녀석(커널모드 동기화)이 아니고 유저모드 동기화 락이다. (이름만 같은것이다. Mutex는 상호배제라는 의미로 다양하게 쓰인다.)
+// Windows 환경에서 내부 구현은 역시나 유저모드 락인 CriticalSection이나 SRWLock 등으로 이루어져 있다.
+// 즉, C++ 표준 라이브러리 mutex는 "유저모드 동기화"이다.
+mutex m;
 
 void SendMsg(char* msg, int len)
 {
-    WaitForSingleObject(hMutex, INFINITE);
+    lock_guard<mutex> lock(m);
+
     for (int i = 0; i < clnt_cnt; i++)
     {
         send(clntSocks[i], msg, len, 0);
     }
-    ReleaseMutex(hMutex);
 }
 
 unsigned WINAPI HandleClnt(void* arg)
@@ -41,7 +49,8 @@ unsigned WINAPI HandleClnt(void* arg)
     }
 
     // Remove disconnted client
-    WaitForSingleObject(hMutex, INFINITE); // Lock
+    lock_guard<mutex> lock(m);
+
     for (int i = 0; i < clnt_cnt; i++)
     {
         if (hClntSock == clntSocks[i])
@@ -55,7 +64,7 @@ unsigned WINAPI HandleClnt(void* arg)
     }
 
     clnt_cnt--;
-    ReleaseMutex(hMutex);                  // Unlock
+
     closesocket(hClntSock);
 
     return 0;
@@ -67,7 +76,8 @@ int main(int argc, char* argv[])
     SOCKET hServSock, hClntSock;
     SOCKADDR_IN servAddr, clntAddr;
     int clntAddrSize = 0;
-    HANDLE hThread;
+
+    vector<thread> threads;
 
     // 라이브러리 초기화
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
@@ -106,15 +116,18 @@ int main(int argc, char* argv[])
         clntAddrSize = sizeof(clntAddr);
         hClntSock = accept(hServSock, (SOCKADDR*)&clntAddr, &clntAddrSize);
 
-        WaitForSingleObject(hMutex, INFINITE);  // Lock
+        lock_guard<mutex> lock(m);
         clntSocks[clnt_cnt++] = hClntSock;
-        ReleaseMutex(hMutex);                   // UnLock
 
-        hThread = (HANDLE)_beginthreadex(NULL, 0, HandleClnt, (void*)&hClntSock, 0, NULL);
+        threads.push_back(thread(HandleClnt, (void*)&hClntSock));
 
         cout << "Connected Client IP: " << inet_ntoa(clntAddr.sin_addr) << "\n";
     }
 
+    for (int i = 0; i < threads.size(); i++)
+    {
+        threads[i].join();
+    }
 
     closesocket(hServSock);
     WSACleanup();
