@@ -12,62 +12,26 @@
 
 #include <vector>
 #include <string>
+#include "Server.h"
 
 using namespace std;
 
 #define BUF_SIZE 100
-#define MAX_CLNT 256
 
-int clnt_cnt = 0;
-SOCKET clntSocks[MAX_CLNT];
-
-// C++11 부터 mutex를 사용할 수 있는 라이브러리가 생겼다.
-// C++ 표준에서 얘기하는 std::mutex는 그 녀석(커널모드 동기화)이 아니고 유저모드 동기화 락이다. (이름만 같은것이다. Mutex는 상호배제라는 의미로 다양하게 쓰인다.)
-// Windows 환경에서 내부 구현은 역시나 유저모드 락인 CriticalSection이나 SRWLock 등으로 이루어져 있다.
-// 즉, C++ 표준 라이브러리 mutex는 "유저모드 동기화"이다.
-mutex m;
-
-void SendMsg(char* msg, int len)
+void CompressSockets(SOCKET hSockArr[], int idx, int total)
 {
-    lock_guard<mutex> lock(m);
-
-    for (int i = 0; i < clnt_cnt; i++)
+    for (int i = idx; i < total; i++)
     {
-        send(clntSocks[i], msg, len, 0);
+        hSockArr[i] = hSockArr[i + 1];
     }
 }
 
-unsigned WINAPI HandleClnt(void* arg)
+void CompressEvents(WSAEVENT hEventArr[], int idx, int total)
 {
-    SOCKET hClntSock = *((SOCKET*)arg);
-    int strLen = 0;
-    char msg[BUF_SIZE];
-
-    while ((strLen = recv(hClntSock, msg, BUF_SIZE - 1, 0)) != 0)
+    for (int i = idx; i < total; i++)
     {
-        SendMsg(msg, strLen);
+        hEventArr[i] = hEventArr[i + 1];
     }
-
-    // Remove disconnted client
-    lock_guard<mutex> lock(m);
-
-    for (int i = 0; i < clnt_cnt; i++)
-    {
-        if (hClntSock == clntSocks[i])
-        {
-            while (i++ < clnt_cnt - 1)
-            {
-                clntSocks[i] = clntSocks[i + 1];
-            }
-            break;
-        }
-    }
-
-    clnt_cnt--;
-
-    closesocket(hClntSock);
-
-    return 0;
 }
 
 int main(int argc, char* argv[])
@@ -75,9 +39,18 @@ int main(int argc, char* argv[])
     WSADATA wsaData;
     SOCKET hServSock, hClntSock;
     SOCKADDR_IN servAddr, clntAddr;
-    int clntAddrSize = 0;
 
-    vector<thread> threads;
+    SOCKET hSockArr[WSA_MAXIMUM_WAIT_EVENTS]; // 64
+    WSAEVENT hEventArr[WSA_MAXIMUM_WAIT_EVENTS];
+    WSAEVENT newEvent;
+    WSANETWORKEVENTS netEvents;
+
+    int numOfClntSock = 0;
+    int strLen;
+    int posInfo;
+    int startIdx;
+    int clntAdrLen;
+    char msg[BUF_SIZE];
 
     // 라이브러리 초기화
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
@@ -111,22 +84,86 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    while (true)
+    newEvent = WSACreateEvent();
+    if (WSAEventSelect(hServSock, newEvent, FD_ACCEPT) == SOCKET_ERROR)
     {
-        clntAddrSize = sizeof(clntAddr);
-        hClntSock = accept(hServSock, (SOCKADDR*)&clntAddr, &clntAddrSize);
-
-        lock_guard<mutex> lock(m);
-        clntSocks[clnt_cnt++] = hClntSock;
-
-        threads.push_back(thread(HandleClnt, (void*)&hClntSock));
-
-        cout << "Connected Client IP: " << inet_ntoa(clntAddr.sin_addr) << "\n";
+        cout << "Error: ServSock: WSAEventSelect()";
+        return 1;
     }
 
-    for (int i = 0; i < threads.size(); i++)
+    hSockArr[numOfClntSock] = hServSock;
+    hEventArr[numOfClntSock] = newEvent;
+    numOfClntSock++;
+
+    while (true)
     {
-        threads[i].join();
+        posInfo = WSAWaitForMultipleEvents(numOfClntSock, hEventArr, FALSE, WSA_INFINITE, FALSE);
+        startIdx = posInfo - WSA_WAIT_EVENT_0;
+
+        for (int i = startIdx; i < numOfClntSock; i++)
+        {
+            int sigEventIdx = WSAWaitForMultipleEvents(1, &hEventArr[i], TRUE, 0, FALSE);
+
+            if ((sigEventIdx == WSA_WAIT_FAILED) || (sigEventIdx == WSA_WAIT_TIMEOUT))
+            {
+                continue;
+            }
+            else
+            {
+                sigEventIdx = i;
+                WSAEnumNetworkEvents(hSockArr[sigEventIdx], hEventArr[sigEventIdx], &netEvents);
+
+                if (netEvents.lNetworkEvents & FD_ACCEPT) // 연결 요청 시
+                {
+                    if (netEvents.iErrorCode[FD_ACCEPT_BIT] != 0)
+                    {
+                        cout << "Eccept Error";
+                        break;
+                    }
+
+                    clntAdrLen = sizeof(clntAddr);
+                    hClntSock = accept(hSockArr[sigEventIdx], (SOCKADDR*)&clntAddr, &clntAdrLen);
+                    newEvent = WSACreateEvent();
+
+                    WSAEventSelect(hClntSock, newEvent, FD_READ | FD_CLOSE);
+
+                    hEventArr[numOfClntSock] = newEvent;
+                    hSockArr[numOfClntSock] = hClntSock;
+                    numOfClntSock++;
+
+                    cout << "Connected New Client..." << endl;
+                }
+
+                if (netEvents.lNetworkEvents & FD_READ) // 데이터 수신 시
+                {
+                    if (netEvents.iErrorCode[FD_READ_BIT] != 0)
+                    {
+                        cout << "Read Error";
+                        break;
+                    }
+
+                    strLen = recv(hSockArr[sigEventIdx], msg, sizeof(msg), 0);
+                    send(hSockArr[sigEventIdx], msg, strLen, 0);
+                }
+
+                if (netEvents.lNetworkEvents & FD_CLOSE)
+                {
+                    if (netEvents.iErrorCode[FD_CLOSE_BIT] != 0)
+                    {
+                        cout << "Close Error";
+                        break;
+                    }
+
+                    WSACloseEvent(hEventArr[sigEventIdx]);
+                    closesocket(hSockArr[sigEventIdx]);
+
+                    numOfClntSock--;
+
+                    CompressSockets(hSockArr, sigEventIdx, numOfClntSock);
+                    CompressEvents(hEventArr, sigEventIdx, numOfClntSock);
+                }
+            }
+        }
     }
 
     closesocket(hServSock);
