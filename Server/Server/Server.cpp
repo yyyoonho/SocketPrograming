@@ -18,39 +18,22 @@ using namespace std;
 
 #define BUF_SIZE 100
 
-void CompressSockets(SOCKET hSockArr[], int idx, int total)
-{
-    for (int i = idx; i < total; i++)
-    {
-        hSockArr[i] = hSockArr[i + 1];
-    }
-}
-
-void CompressEvents(WSAEVENT hEventArr[], int idx, int total)
-{
-    for (int i = idx; i < total; i++)
-    {
-        hEventArr[i] = hEventArr[i + 1];
-    }
-}
 
 int main(int argc, char* argv[])
 {
     WSADATA wsaData;
-    SOCKET hServSock, hClntSock;
-    SOCKADDR_IN servAddr, clntAddr;
+    SOCKET hLisnSock, hRecvSock;
+    SOCKADDR_IN lisnAddr, recvAddr;
 
-    SOCKET hSockArr[WSA_MAXIMUM_WAIT_EVENTS]; // 64
-    WSAEVENT hEventArr[WSA_MAXIMUM_WAIT_EVENTS];
-    WSAEVENT newEvent;
-    WSANETWORKEVENTS netEvents;
+    int recvAddrSize;
+    
+    WSABUF dataBuf;
+    WSAEVENT evObj;
+    WSAOVERLAPPED overlapped;
 
-    int numOfClntSock = 0;
-    int strLen;
-    int posInfo;
-    int startIdx;
-    int clntAdrLen;
-    char msg[BUF_SIZE];
+    char buf[BUF_SIZE];
+    unsigned long recvBytes = 0;
+    unsigned long flags = 0;
 
     // 라이브러리 초기화
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
@@ -60,113 +43,61 @@ int main(int argc, char* argv[])
     }
 
     // 소켓 생성
-    hServSock = socket(PF_INET, SOCK_STREAM, 0);
-    if (hServSock == INVALID_SOCKET)
+    hLisnSock = WSASocket(PF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+    if (hLisnSock == INVALID_SOCKET)
     {
         cout << "Error: socket()";
         return 1;
     }
 
-    servAddr = {};
-    servAddr.sin_family = AF_INET;
-    servAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    servAddr.sin_port = htons(8888);
+    lisnAddr = {};
+    lisnAddr.sin_family = AF_INET;
+    lisnAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    lisnAddr.sin_port = htons(8888);
 
-    if ((bind(hServSock, (SOCKADDR*)&servAddr, sizeof(servAddr))) == SOCKET_ERROR)
+    if ((bind(hLisnSock, (SOCKADDR*)&lisnAddr, sizeof(lisnAddr))) == SOCKET_ERROR)
     {
         cout << "Error: bind()";
         return 1;
     }
     
-    if (listen(hServSock, 5) == SOCKET_ERROR)
+    if (listen(hLisnSock, 5) == SOCKET_ERROR)
     {
         cout << "Error: listen()";
         return 1;
     }
 
-    newEvent = WSACreateEvent();
-    if (WSAEventSelect(hServSock, newEvent, FD_ACCEPT) == SOCKET_ERROR)
+    recvAddrSize = sizeof(recvAddr);
+    hRecvSock = accept(hLisnSock, (SOCKADDR*)&recvAddr, &recvAddrSize);
+
+    evObj = WSACreateEvent();
+    memset(&overlapped, 0, sizeof(overlapped));
+    overlapped.hEvent = evObj;
+    dataBuf.buf = buf;
+    dataBuf.len = BUF_SIZE;
+
+    if (WSARecv(hRecvSock, &dataBuf, 1, &recvBytes, &flags, &overlapped, NULL) == SOCKET_ERROR)
     {
-        cout << "Error: ServSock: WSAEventSelect()";
-        return 1;
-    }
-
-    hSockArr[numOfClntSock] = hServSock;
-    hEventArr[numOfClntSock] = newEvent;
-    numOfClntSock++;
-
-    while (true)
-    {
-        posInfo = WSAWaitForMultipleEvents(numOfClntSock, hEventArr, FALSE, WSA_INFINITE, FALSE);
-        startIdx = posInfo - WSA_WAIT_EVENT_0;
-
-        for (int i = startIdx; i < numOfClntSock; i++)
+        if (WSAGetLastError() == WSA_IO_PENDING)
         {
-            int sigEventIdx = WSAWaitForMultipleEvents(1, &hEventArr[i], TRUE, 0, FALSE);
+            cout << "Background data receive..." << endl;
 
-            if ((sigEventIdx == WSA_WAIT_FAILED) || (sigEventIdx == WSA_WAIT_TIMEOUT))
-            {
-                continue;
-            }
-            else
-            {
-                sigEventIdx = i;
-                WSAEnumNetworkEvents(hSockArr[sigEventIdx], hEventArr[sigEventIdx], &netEvents);
+            WSAWaitForMultipleEvents(1, &evObj, TRUE, WSA_INFINITE, FALSE);
 
-                if (netEvents.lNetworkEvents & FD_ACCEPT) // 연결 요청 시
-                {
-                    if (netEvents.iErrorCode[FD_ACCEPT_BIT] != 0)
-                    {
-                        cout << "Eccept Error";
-                        break;
-                    }
-
-                    clntAdrLen = sizeof(clntAddr);
-                    hClntSock = accept(hSockArr[sigEventIdx], (SOCKADDR*)&clntAddr, &clntAdrLen);
-                    newEvent = WSACreateEvent();
-
-                    WSAEventSelect(hClntSock, newEvent, FD_READ | FD_CLOSE);
-
-                    hEventArr[numOfClntSock] = newEvent;
-                    hSockArr[numOfClntSock] = hClntSock;
-                    numOfClntSock++;
-
-                    cout << "Connected New Client..." << endl;
-                }
-
-                if (netEvents.lNetworkEvents & FD_READ) // 데이터 수신 시
-                {
-                    if (netEvents.iErrorCode[FD_READ_BIT] != 0)
-                    {
-                        cout << "Read Error";
-                        break;
-                    }
-
-                    strLen = recv(hSockArr[sigEventIdx], msg, sizeof(msg), 0);
-                    send(hSockArr[sigEventIdx], msg, strLen, 0);
-                }
-
-                if (netEvents.lNetworkEvents & FD_CLOSE)
-                {
-                    if (netEvents.iErrorCode[FD_CLOSE_BIT] != 0)
-                    {
-                        cout << "Close Error";
-                        break;
-                    }
-
-                    WSACloseEvent(hEventArr[sigEventIdx]);
-                    closesocket(hSockArr[sigEventIdx]);
-
-                    numOfClntSock--;
-
-                    CompressSockets(hSockArr, sigEventIdx, numOfClntSock);
-                    CompressEvents(hEventArr, sigEventIdx, numOfClntSock);
-                }
-            }
+            WSAGetOverlappedResult(hRecvSock, &overlapped, &recvBytes, FALSE, NULL);
+        }
+        else
+        {
+            cout << "ERROR: WSARecv()" << endl;
+            return 1;
         }
     }
 
-    closesocket(hServSock);
+    cout << "Received message: " << buf;
+
+    WSACloseEvent(evObj);
+    closesocket(hRecvSock);
+    closesocket(hLisnSock);
     WSACleanup();
 
     return 0;
